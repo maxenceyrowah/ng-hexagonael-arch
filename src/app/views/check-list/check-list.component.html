@@ -1,0 +1,16 @@
+<div>
+  <div>
+    <h1>
+      Check-list
+    </h1>
+
+    <app-add-tast-form (add)="addTask($event)" />
+
+    <div class="content">
+      <app-check-list-item *ngFor="let task of tasks()" [task]="task" (remove)="remove($event)"
+        (toggle)="toggle($event)" />
+
+      <div class="empty" *ngIf="!tasks()?.length">Ajoute ta premiere tache</div>
+    </div>
+  </div>
+</div>
