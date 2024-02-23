@@ -1,7 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { BehaviorSubject, switchMap, tap } from 'rxjs';
+import { Subject, exhaustMap, filter, merge, startWith, switchMap } from 'rxjs';
 
 import { TaskGateway } from '../../core/ports/task.gatway';
 import { FormsModule } from '@angular/forms';
@@ -12,7 +12,6 @@ import { CheckListItemComponent } from './components/check-list-item.component';
 @Component({
   selector: 'app-check-list',
   standalone: true,
-  templateUrl: './check-list.component.html',
   styleUrls: ['./check-list.component.scss'],
   imports: [
     CommonModule,
@@ -20,34 +19,59 @@ import { CheckListItemComponent } from './components/check-list-item.component';
     AddTaskFormComponent,
     CheckListItemComponent,
   ],
+  template: `
+    <div>
+      <div>
+        <h1>Check-list</h1>
+
+        <app-add-tast-form (add)="add$$.next($event)" />
+
+        <div class="content">
+          <app-check-list-item
+            *ngFor="let task of tasks()"
+            [task]="task"
+            (remove)="delete$$.next($event)"
+            (toggle)="toggle$$.next($event)"
+          />
+
+          <div class="empty" *ngIf="!tasks()?.length">
+            Ajoute ta premiere tache
+          </div>
+        </div>
+      </div>
+    </div>
+  `,
 })
 export class CheckListComponent {
   taskGateway = inject(TaskGateway);
-  reload$ = new BehaviorSubject<void>(undefined);
-  tasks = toSignal(
-    this.reload$.pipe(switchMap(() => this.taskGateway.retrieveAll()))
+
+  add$$ = new Subject<string>();
+  toggle$$ = new Subject<Task>();
+  delete$$ = new Subject<Task>();
+
+  private add$ = this.add$$.asObservable().pipe(
+    filter(Boolean),
+    exhaustMap((taskName) => this.taskGateway.add(taskName))
   );
 
-  addTask(taskName: string) {
-    if (!taskName) return;
+  private toggle$ = this.toggle$$
+    .asObservable()
+    .pipe(
+      switchMap((task) =>
+        task.completed
+          ? this.taskGateway.markAsUnComplete(task.id)
+          : this.taskGateway.markAsComplete(task.id)
+      )
+    );
 
-    this.taskGateway
-      .add(taskName)
-      .pipe(tap(() => this.reload$.next()))
-      .subscribe();
-  }
-  toggle(task: Task) {
-    const toggle$ = task.completed
-      ? this.taskGateway.markAsUnComplete(task.id)
-      : this.taskGateway.markAsComplete(task.id);
+  private delete$ = this.delete$$
+    .asObservable()
+    .pipe(switchMap((task) => this.taskGateway.remove(task.id)));
 
-    toggle$.pipe(tap(() => this.reload$.next())).subscribe();
-  }
-
-  remove(task: Task) {
-    return this.taskGateway
-      .remove(task.id)
-      .pipe(tap(() => this.reload$.next()))
-      .subscribe();
-  }
+  tasks = toSignal(
+    merge(this.add$, this.toggle$, this.delete$).pipe(
+      startWith(void 0),
+      switchMap(() => this.taskGateway.retrieveAll())
+    )
+  );
 }
